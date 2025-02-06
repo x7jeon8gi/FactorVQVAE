@@ -1,0 +1,64 @@
+# 모델 하이퍼파라미터
+vqvae:
+  input_channel: 1  # only Close price
+  num_features: 158 #  alpha 158 but -> latent feature 화
+  num_factors: 64  # ! Number of codebooks ....
+  hidden_size: 128    #  hidden dimension
+  num_elements: 64   # elements...
+  dropout: 0.1
+  num_heads: 4 
+  alpha: 10 #  alpha
+  market_features: 63 # 63 for china
+
+transformer: # For-Stage2 모두 고정시킵니다.
+  use_market: True
+  num_tokens: 20        
+  hidden_size: 32      # hdn very important
+  embed_dim: 32        # 최소값은 32, hidden 64이상부터는 hidden과 dim을 맞춰감.
+  heads: 4             # (4,8) 로 실험해보자
+  n_layers: 4          # (4,6)
+  ff_mult: 4            
+  pkeep: 1     
+  temperature : 1.0
+  attn_pdrop: 0.1     
+  saved_model: "Revise_VQ1_C64_h128_e64_sd0-epoch=6-val_loss=0.02624.ckpt"
+  rank_loss: True
+  rank_loss_alpha: 0.1
+
+# 학습 하이퍼파라미터
+train:
+  device: "cuda"
+  batch_size: 300 #(대략?)
+  learning_rate: 0.0001
+  num_epochs: 100             # ! 30 for stage1 , 100 for stage2
+  early_stop: 30
+  project_name: "VQVAE-KBS"
+  run_name: autmatically
+  group_name: GPT
+  gpu_counts: 4
+  precision: 32 
+  num_workers: 0
+  seed: 0                    # ! SEED
+
+inference:
+  model: gpt
+  window_size: 20
+  batch_size: 512
+
+# 데이터셋 경로
+data:
+  data_path: 'data/csi_data.pkl' # KBS
+  window_size: 20 
+  step: 1
+  train_period : ["2009-01-01", "2019-06-30"]
+  valid_period : ["2019-07-01", "2019-12-31"]
+  test_period  : ["2020-01-01", "2023-06-30"] # KBS : 23.12.31
+
+quantizer: 
+  affine_lr: 2    # (default: 0.0) lr scale for affine parameters
+  replace_freq: 20    # (default: None) frequency to replace dead codes
+  sync_nu: 2        # (default: 0.0) codebook synchronization contribution
+  beta: 0.9           # (default: 0.9) commitment trade-off
+  kmeans_init: True    # (default: False) whether to use kmeans++ init
+  norm :               # (default: None) normalization for the input vectors
+  cb_norm:             # (default: None) normalization for codebook vectors
