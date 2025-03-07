@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from utils import RankLoss
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
-from module.gpt_transformer import AutoRegressiveTransformer
+from module.transformer import AutoRegressiveTransformer
 from utils import get_root_dir, calc_ic
 
 class minGPT(pl.LightningModule):
@@ -47,14 +47,19 @@ class minGPT(pl.LightningModule):
         vq_code = config['vqvae']['num_factors']
         alpha = config['vqvae']['alpha']
         rank_alpha = config['transformer']['rank_loss_alpha']
-
         self.name = f'Revise2_{rank_alpha}_VQ_{vq_code}_h{vq_hidden}_e{vq_elements}__Th_{tf_hidden}_h{tf_head}_l{tf_layers}_sd{seed}' # !Auto
         self.ic = []
         self.ric = []
+        self.best_val_loss = float('inf')
+        self.best_metrics_at_min_loss = {}
+        self.eta = config['transformer']['eta']
+        self.omega = config['transformer']['omega']
         self.save_hyperparameters()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr= self.config['train']['learning_rate'])
+        # optimizer = torch.optim.AdamW(self.parameters(), lr= self.config['train']['learning_rate'])
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.config['train']['learning_rate'], 
+                                      betas=(0.9, 0.98), eps=1e-6, weight_decay=1e-3)
         scheduler = CosineAnnealingLR(optimizer, T_max= self.T_max)
         sch_config = {'scheduler': scheduler, 'interval': 'step', 'frequency': 1}
         return [optimizer], [sch_config]
@@ -75,7 +80,8 @@ class minGPT(pl.LightningModule):
         logit, target, y_hat = self.forward(firm_char, y, market)
         prior_loss = F.cross_entropy(logit.reshape(-1, logit.size(-1)), target.reshape(-1))
         mse_loss = self.mse_loss(y_hat, y)
-        loss = prior_loss + mse_loss
+        #loss = self.eta * prior_loss + mse_loss
+        loss = prior_loss + self.omega * mse_loss
         self.log('train_loss', loss)
         self.log('train_prior_loss', prior_loss)
         self.log('train_mse_loss', mse_loss)
@@ -89,7 +95,8 @@ class minGPT(pl.LightningModule):
         logit, target, y_hat = self.forward(firm_char, y, market)
         prior_loss = F.cross_entropy(logit.reshape(-1, logit.size(-1)), target.reshape(-1), ignore_index=-1)
         mse_loss = self.mse_loss(y_hat, y)
-        loss = prior_loss + mse_loss
+        #loss = self.eta * prior_loss + mse_loss
+        loss = prior_loss + self.omega * mse_loss
         self.log('val_loss', loss, on_epoch=True, logger=True, sync_dist=True)
         self.log('val_prior_loss', prior_loss, on_epoch=True, logger=True, sync_dist=True)
         self.log('val_mse_loss', mse_loss, on_epoch=True, logger=True, sync_dist=True)
@@ -106,17 +113,35 @@ class minGPT(pl.LightningModule):
             self.log('train_loss_epoch', train_loss_epoch, on_step=False, on_epoch=True, logger=True, sync_dist=True)
 
     def on_validation_epoch_end(self):
-        val_loss_epoch = self.trainer.callback_metrics.get('val_loss')
+        # Calculate the IC and RIC for the validation set
+        current_ic = np.mean(self.ic)
+        current_ric = np.mean(self.ric)
+        current_icir = np.mean(self.ic) / np.std(self.ic) if np.std(self.ic) != 0 else 0
+        current_ricir = np.mean(self.ric) / np.std(self.ric) if np.std(self.ric) != 0 else 0
+
         metric = {
-            'Val_IC': np.mean(self.ic),
-            'Val_ICIR': np.mean(self.ric) / np.std(self.ric),
-            'Val_RIC': np.mean(self.ric),
-            'Val_RICIR': np.mean(self.ric) / np.std(self.ric)
+            'Val_IC': current_ic,
+            'Val_ICIR': current_icir,
+            'Val_RIC': current_ric,
+            'Val_RICIR': current_ricir,
         }
         self.log_dict(metric, on_step=False, on_epoch=True, logger=True, sync_dist=True)
+    
         # Reset the IC and RIC lists
         self.ic = []
         self.ric = []
 
+        val_loss_epoch = self.trainer.callback_metrics.get('val_loss')
+        if val_loss_epoch is not None and val_loss_epoch < self.best_val_loss:
+            # 현재 에폭이 이전까지의 최소 validation loss보다 낮다면 업데이트
+            self.best_val_loss = val_loss_epoch
+            self.best_metrics_at_min_loss = {
+                'Best_Val_Loss': float(val_loss_epoch),
+                'Best_Val_IC': current_ic,
+                'Best_Val_ICIR': current_icir,
+                'Best_Val_RIC': current_ric,
+                'Best_Val_RICIR': current_ricir,
+            }
+            self.log_dict(self.best_metrics_at_min_loss, on_step=False, on_epoch=True, logger=True, sync_dist=True)
         if val_loss_epoch is not None:
             self.log('val_loss_epoch', val_loss_epoch, on_step=False, on_epoch=True, logger=True, sync_dist=True)

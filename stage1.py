@@ -2,8 +2,6 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.utils.data import Dataset, Sampler, BatchSampler
 import wandb
 import pandas as pd
 import logging
@@ -14,7 +12,6 @@ from torch.utils.data import DataLoader, random_split, Dataset
 
 from qlib.data.dataset import DatasetH, TSDatasetH, DataHandlerLP, TSDataSampler
 from trainer.autoencoder import FactorVQVAE
-# from data.dataset import DailyBatchSamplerRandom
 import os
 from utils import load_yaml_param_settings, load_args, get_root_dir, save_model, seed_everything
 from data.dataset import init_data_loader
@@ -34,8 +31,8 @@ def train(config, train_loader, valid_loader):
         run_name = None
 
     #* Init model
-    n_train_samples = len(train_loader) * config['train']['batch_size'] # approximate
-
+    n_train_samples = len(train_loader.dataset)
+    
     model = FactorVQVAE(config, n_train_samples, ckpt_path=None, ignore_keys=list())
 
     #* Init logger
@@ -62,7 +59,9 @@ def train(config, train_loader, valid_loader):
 
     trainer = pl.Trainer(logger = wandb_logger,
                          enable_checkpointing=True,
-                         callbacks=[LearningRateMonitor(logging_interval='step'), chekcpoint_callback, early_stop_callback],
+                         callbacks=[LearningRateMonitor(logging_interval='step'), 
+                                    chekcpoint_callback, 
+                                    early_stop_callback],
                          max_epochs=config['train']['num_epochs'],
                          accelerator= 'gpu', # 'gpu'
                          # strategy='ddp',

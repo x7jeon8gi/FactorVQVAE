@@ -13,9 +13,11 @@ from utils.parser import *
 from utils.rankloss import RankLoss
 from utils.load import freeze, load_pretrained_tok_emb
 from utils.seed import seed_everything
-from utils.test import run_inference, calc_ic, RankIC
+from utils.test import run_inference, calc_ic, RankIC, run_inference_gru, run_inference_cont, run_interpret
 from utils.backtest import calculate_table_metrics
 from utils.metric_log import log_metrics_as_bar_chart
+from utils.unfreeze import UnfreezeDecoderCallback
+
 def save_model(models_dict: dict, dirname='store', id: str = ''):
     """
     :param models_dict: {'model_name': model, ...}

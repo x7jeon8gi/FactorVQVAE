@@ -7,6 +7,7 @@ import numpy as np
 from pathlib import Path
 from module.vqvae import FactorEncoder, FactorDecoder, FeatureExtractor
 from vqtorch.nn import VectorQuant
+#from vector_quantize_pytorch import VectorQuantizer
 import os
 import sys
 import math 
@@ -51,7 +52,7 @@ class AutoRegressiveTransformer(nn.Module):
 
         self.decoder = FactorDecoder(
             input_size  = self.dim, hidden_size = self.dim,
-            num_factors = config['vqvae']['num_elements']) # num_factors = num_elements
+            num_elements = config['vqvae']['num_elements']) # num_factors = num_elements
         
         self.quantizer = VectorQuant(
             feature_size = self.dim,                                 # feature dimension corresponding to the vectors
@@ -67,6 +68,7 @@ class AutoRegressiveTransformer(nn.Module):
             )
         
         # load trained models for encoder, decoder, and quantizer
+        self.checkpoint_folder = config['transformer']['checkpoint_folder']
         self.load_pretrained_model(config)
 
         # Initialize transformer
@@ -87,12 +89,15 @@ class AutoRegressiveTransformer(nn.Module):
         self.use_market = config['transformer']['use_market']
         self.market_extractor = FeatureExtractor(num_latent = config['vqvae']['market_features'],
                                                  hidden_size = config['transformer']['hidden_size'])
-
     def load_pretrained_model(self, config):
         saved_model = config['transformer']['saved_model']
         saved_model = f"{saved_model}.ckpt" if saved_model and not saved_model.endswith('.ckpt') else saved_model
-        checkpoint_path = Path(get_root_dir()).joinpath('checkpoints', saved_model)
-        checkpoint = torch.load(checkpoint_path)['state_dict']
+        checkpoint_path = Path(get_root_dir()).joinpath(self.checkpoint_folder, saved_model)
+        try:
+            checkpoint = torch.load(checkpoint_path)['state_dict']
+        except FileNotFoundError:
+            print(f"Checkpoint not found at {checkpoint_path}.")
+            sys.exit(1)
 
         def load_state_dict(module, prefix):
             state_dict = {k.replace(f'{prefix}.', ''): v for k, v in checkpoint.items() if k.startswith(prefix)}

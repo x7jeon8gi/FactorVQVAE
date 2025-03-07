@@ -7,7 +7,7 @@ import numpy as np
 import math
 from pathlib import Path
 from module.bidirectional_transformer import BidirectionalTransformer
-from module.gpt_transformer import AutoRegressiveTransformer
+from module.transformer import AutoRegressiveTransformer
 import math
 from data.dataset import DateGroupedBatchSampler, collate_fn, init_data_loader
 import pandas as pd 
@@ -269,7 +269,7 @@ def Cal_IC_IR(df, column1='LABEL0', column2='Pred'):
 
     metrics = {
         'IC': np.mean(ic),
-        'IC_IR': np.mean(ric) / np.std(ric),
+        'IC_IR': np.mean(ic) / np.std(ic),
         'RankIC': np.mean(ric),
         'RankIC_IR': np.mean(ric) / np.std(ric)
     }

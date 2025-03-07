@@ -107,7 +107,7 @@ class AttentionLayer(nn.Module):
 
     def _apply_attention(self, query, key, value, batch_size):
         # Calculate attention scores
-        attention_scores = torch.matmul(query, key.transpose(-2, -1)) / self.scale
+        attention_scores = torch.matmul(query, key.transpose(-2, -1)) * self.scale
         
         # Create a mask to block future information
         seq_len = query.size(2)
@@ -162,13 +162,14 @@ class FactorEncoder(nn.Module):
         self.num_heads = num_heads
         self.lin_enc = LinearEncoder(input_size, hidden_size, hidden_size) # * VERY SIMPLE ARCHITECTURE
         # Initialize AttentionLayer
+        # self.norm = nn.LayerNorm(hidden_size)  #! 추가 => 제거
         self.attention = nn.ModuleList([EncoderLayer(hidden_size, num_heads, dropout) for _ in range(stacks)])
         self.use_attn = use_attn
     def forward(self, inputs):
         # Process input through RNNEncoder #todo 이름 바꾸기
         inputs = inputs.float()
         encoder_outputs = self.lin_enc(inputs)
-
+        # encoder_outputs = self.norm(encoder_outputs)  #! 25.02.18 정규화 적용
         # Process input through AttentionLayer
         if self.use_attn:
             for layer in self.attention:
@@ -208,30 +209,30 @@ class BetaLayer(LinearLayer):
         return beta_mu
 
 class FactorDecoder(nn.Module):
-    def __init__(self, input_size, hidden_size, num_factors=None):
+    def __init__(self, input_size, hidden_size, num_elements=None):
         super(FactorDecoder, self).__init__()
         # Initialize alpha and beta layers within the class
         self.hidden_size = hidden_size
-        self.num_factors = hidden_size if num_factors is None else num_factors
+        self.num_elements = hidden_size if num_elements is None else num_elements
         self.input_size = input_size
-        print(f"Decoder :: num_elements: {num_factors}, hidden_size: {hidden_size}")
-        self.alpha_layer = AlphaLayer(self.input_size, self.num_factors)
-        self.beta_layer = BetaLayer(self.input_size, self.hidden_size, self.num_factors)
-        self.factor_layer = nn.Linear(self.hidden_size, self.num_factors)
+        print(f"Decoder :: num_elements: {num_elements}, hidden_size: {hidden_size}")
+        self.alpha_layer = AlphaLayer(self.input_size, self.num_elements)
+        self.beta_layer = BetaLayer(self.input_size, self.hidden_size, self.num_elements)
+        self.factor_layer = nn.Linear(self.hidden_size, self.num_elements)
 
-        self.gru_loading = nn.GRUCell(self.num_factors, self.num_factors)
+        self.gru_loading = nn.GRUCell(self.num_elements, self.num_elements)
         self.linear = nn.Linear(self.hidden_size, 1)
         self.activation = nn.GELU()
 
     def _initialize_hidden_state(self, inputs):
-        return torch.zeros(inputs.size(0), self.num_factors, device=inputs.device, dtype=inputs.dtype)
+        return torch.zeros(inputs.size(0), self.num_elements, device=inputs.device, dtype=inputs.dtype)
     
     def forward(self, firm_char, inputs, hidden =None):
-        alpha = self.alpha_layer(firm_char) # (B, seq_len, 1)
-        beta = self.beta_layer(firm_char)   # (B, seq_len, num_factors)
+        alpha = self.alpha_layer(firm_char) # (B, seq_len, hidden) -> (B, seq_len, 1)
+        beta = self.beta_layer(firm_char)   # (B, seq_len, hidden) -> (B, seq_len, num_elements)
 
-        # inputs: (B, seq_len, num_factors)
-        inputs = self.factor_layer(inputs)
+        # inputs: (B, seq_len, num_elements)
+        inputs = self.factor_layer(inputs) # (B, seq_len, hidden) -> (B, seq_len, num_elements)
 
         if hidden is None:
             hidden = self._initialize_hidden_state(inputs)
@@ -243,9 +244,9 @@ class FactorDecoder(nn.Module):
             # output = self.linear(output)
             outputs.append(output)
 
-        outputs = torch.stack(outputs, dim=1) # (B, seq_len, num_factors)
+        outputs = torch.stack(outputs, dim=1) # (B, seq_len, num_elements)
 
-        # (B, seq_len, num_factor) * (B, seq_len, num_factor) -> (B, seq_len, 1)
+        # (B, seq_len, num_elements) * (B, seq_len, num_elements) -> (B, seq_len, 1)
         y_hat = torch.sum(beta * outputs, dim=-1, keepdim=True) + alpha  # (B, seq_len, 1)
 
         return y_hat, hidden

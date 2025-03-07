@@ -19,7 +19,7 @@ def train():
     config = load_yaml_param_settings(args.config)
     
     #* Init logger
-    group_name = "Stage1"
+    group_name   = "Stage1"
     project_name = "FactorVQVAE-SWEEP1"
     wandb.init(project=project_name,  group= group_name, entity="x7jeon8gi") # todo: group_name
     wandb_config = wandb.config
@@ -55,9 +55,10 @@ def train():
     n_train_samples = len(train_loader.dataset)
 
     #! W&B Sweep 파라미터
-    # config['vqvae']['hidden_size'] = wandb_config.hidden_dim
     config['vqvae']['num_factors'] = wandb_config.num_factors
-    # config['vqvae']['num_heads'] = wandb_config.num_heads
+    # config['vqvae']['hidden_size'] = wandb_config.hidden_dim
+    # config['vqvae']['num_elements'] = wandb_config.hidden_dim #! 250219 num_element와 hidden_dim 통일 
+
     codebook_sizes = config['vqvae']['num_factors']
     hidden_size = config['vqvae']['hidden_size']
     elements = config['vqvae']['num_elements']
@@ -65,7 +66,7 @@ def train():
     project_name = config['train']['project_name']
     seed = config['train']['seed']
     if config['train']['run_name'] is not None:
-        run_name = f'Revise_VQ1_C{codebook_sizes}_h{hidden_size}_e{elements}_sd{seed}' # !Auto
+        run_name = f'Fin_VQ1_C{codebook_sizes}_h{hidden_size}_e{elements}_sd{seed}' # !Auto
     else:
         run_name = None
 
@@ -73,9 +74,9 @@ def train():
     wandb.config.update(config)
 
     # 호환되지 않는 조합을 검사하고 처리
-    # if config['vqvae']['hidden_size'] % config['vqvae']['num_heads'] != 0:
-    #     print(f"Skipping incompatible combination: hidden_dim={wandb_config.hidden_dim}, num_heads={wandb_config.num_heads}")
-    #     return  # 이 실험을 스킵하고 다음 조합으로 넘어감
+    if config['vqvae']['hidden_size'] == 128 and config['vqvae']['num_elements'] == 32:
+        print(f"Skipping incompatible combination: hidden_dim={wandb_config.hidden_dim}, num_elements={wandb_config.num_elements}")
+        return  # Skip this experiment and move to the next combination
 
     #* Init model
     n_train_samples = len(train_loader) * config['train']['batch_size'] # approximate
@@ -83,18 +84,18 @@ def train():
     wandb_logger.watch(model, log='all')
 
     #* Init Trainer
-    chekcpoint_callback = ModelCheckpoint(
+    checkpoint_callback = ModelCheckpoint(
         save_top_k=1,
         monitor='val_loss',
         mode='min',
-        dirpath=os.path.join(get_root_dir(), 'checkpoints'),
+        dirpath=os.path.join(get_root_dir(), 'checkpoints_fix'),
         filename = f'{run_name}'+'-{epoch}-{val_loss:.5f}'
     )
 
     early_stop_callback = EarlyStopping(
         monitor='val_loss',
         min_delta=0.0001,
-        patience=10, # epochs to wait after min has been reached
+        patience=5, # epochs to wait after min has been reached
         verbose=True,
         mode='min'
     )
@@ -102,7 +103,7 @@ def train():
     trainer = pl.Trainer(logger = wandb_logger,
                          enable_checkpointing=True,
                          callbacks=[LearningRateMonitor(logging_interval='step'), 
-                                    chekcpoint_callback, 
+                                    checkpoint_callback, 
                                     early_stop_callback],
                          max_epochs=config['train']['num_epochs'],
                          accelerator= 'gpu', # 'gpu'
@@ -128,12 +129,16 @@ if __name__ == "__main__":
         },
         'parameters': {
             'num_factors': {
-                'values': [256,512,1024]
+                'value': 1024
             },
             'seed':{
-                'value': 2
-            }
-        }
+                'value': 4
+            },
+            # 'hidden_dim': {
+            #     'values': [256,128]
+            # },
+
+            },
     }
-    sweep_id = wandb.sweep(sweep_config, project="FactorVQVAE-SWEEP1",entity="x7jeon8gi")
+    sweep_id = wandb.sweep(sweep_config, project="FinVQVAE-SWEEP1",entity="x7jeon8gi")
     wandb.agent(sweep_id, function=train)

@@ -10,7 +10,6 @@ from vqtorch.nn import VectorQuant
 from module.vqvae import FactorDecoder, FactorEncoder, FeatureExtractor
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
-# from vector_quantize_pytorch import VectorQuantize
 
 class FactorVQVAE(pl.LightningModule):
     def __init__(self,
@@ -43,7 +42,7 @@ class FactorVQVAE(pl.LightningModule):
         
         self.decoder = FactorDecoder(input_size = self.hidden_size,
                                      hidden_size = self.hidden_size,
-                                     num_factors= self.num_elements,)
+                                     num_elements= self.num_elements,)
 
         self.quantizer = VectorQuant(
                     feature_size=self.hidden_size,                          # feature dimension corresponding to the vectors
@@ -57,15 +56,6 @@ class FactorVQVAE(pl.LightningModule):
                     replace_freq= self.config['quantizer']['replace_freq'], # (default: None) frequency to replace dead codes
                     dim= -1,                                                  # (default: -1) dimension to be quantized
                     )
-        
-        # self.quantizer = VectorQuantize(
-        #     dim = self.hidden_size,
-        #     codebook_size= self.num_factors,
-        #     decay = 0.9,
-        #     commitment_weight= 0.25,
-        #     kmeans_init = True,
-        #     kmeans_iters = self.r_freq,
-        # ).cuda()
 
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)

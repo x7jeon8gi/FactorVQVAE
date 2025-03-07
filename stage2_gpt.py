@@ -14,23 +14,13 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, Ea
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from utils import load_yaml_param_settings, load_args, get_root_dir, save_model, seed_everything, run_inference
+from utils import load_yaml_param_settings, load_args, get_root_dir, save_model, seed_everything, run_inference, UnfreezeDecoderCallback
 from trainer.autoregressive import minGPT
 import logging
 from qlib.data.dataset import DatasetH, TSDatasetH, DataHandlerLP
 from data.dataset import init_data_loader
 import time
 torch.set_float32_matmul_precision('high')
-
-def check_and_update_group_name(config):
-    if config['train']['group_name'] == 'BERT':
-        print("Warning: You are using GPT pretrained model. Please check the config file.")
-        config['train']['group_name'] = 'GPT'
-        config['train']['run_name'] = config['train']['run_name'].replace('BERT', 'GPT')
-
-def update_config(config, key1, key2, key3):
-    if config[key1][key2] != config['transformer'][key3]:
-        config[key1][key2] = config['transformer'][key3]
 
 def train_stage2(config, train_loader, valid_loader, test_loader):
     
@@ -44,8 +34,10 @@ def train_stage2(config, train_loader, valid_loader, test_loader):
     alpha = config['vqvae']['alpha']
     rank_alpha = config['transformer']['rank_loss_alpha']
     project_name = config['train']['project_name']
+    dec_warmup = config['transformer']['dec_warmup']
+
     if config['train']['run_name'] is not None:
-        run_name = f'Revise2_a{rank_alpha}_VQ{vq_code}_h{vq_hidden}_e{vq_elements}_Th{tf_hidden}_h{tf_head}_l{tf_layers}_sd{seed}' # !Auto
+        run_name = f'NewEta0.75_a{rank_alpha}_VQ{vq_code}_Th{tf_hidden}_h{tf_head}_l{tf_layers}_sd{seed}' # !Auto
     else:
         raise NotImplementedError("run_name should be specified. We recommend to use the same run_name as stage1.")
 
@@ -56,35 +48,40 @@ def train_stage2(config, train_loader, valid_loader, test_loader):
     
     #* init logger
     group_name = config['train']['group_name'] if config['train']['group_name'] is not None else "실험 중"
-    wandb.init(project=project_name+'-2-GPT', name=run_name, config=config, group= group_name,entity="x7jeon8gi") # todo: group_name
+    wandb.init(project=project_name, name=run_name, config=config, group= group_name,entity="x7jeon8gi") # todo: group_name
     wandb_logger = WandbLogger(project=project_name, name=run_name, config=config,entity="x7jeon8gi")
     wandb_logger.watch(model, log='all')
 
     chekcpoint_callback = ModelCheckpoint(
         save_top_k=1,
-        monitor='val_loss',
-        mode='min',
+        monitor='Val_RIC',
+        mode='max',
         dirpath=os.path.join(get_root_dir(), 'checkpoints'),
-        filename = f'{run_name}'+'-GPT'+'-{epoch}-{val_loss:.4f}'
+        filename = f'{run_name}'+'-{epoch}-{val_loss:.4f}'
     )
 
     early_stop_callback = EarlyStopping(
         monitor='val_loss',
         min_delta=0.0001,
-        patience=50, # epochs to wait after min has been reached
+        patience=15, # epochs to wait after min has been reached
         verbose=True,
         mode='min'
     )
 
+    callbacks =[LearningRateMonitor(logging_interval='step'),
+                chekcpoint_callback, 
+                early_stop_callback]
+        
     trainer = pl.Trainer(logger = wandb_logger,
                     enable_checkpointing=True,
-                    callbacks=[LearningRateMonitor(logging_interval='step'), chekcpoint_callback, early_stop_callback],
+                    callbacks=callbacks,
                     max_epochs=config['train']['num_epochs'],
                     accelerator= 'gpu', # 'gpu' # ! 디버깅을 위해 device를 cpu로 설정
                     # strategy='ddp',
                     devices= 1, # config['train']['gpu_counts'] if torch.cuda.is_available() else None,
                     num_nodes=1,
                     precision = config['train']['precision'],
+                    gradient_clip_val=3.0
                     )
     
     trainer.fit(model, train_dataloaders = train_loader, val_dataloaders = valid_loader)
@@ -108,10 +105,6 @@ if __name__ =="__main__":
     args = load_args()
     config = load_yaml_param_settings(args.config)
     seed_everything(config['train']['seed'])
-
-    update_config(config, 'data', 'window_size', 'num_tokens')
-    # update_config(config, 'vqvae', 'num_factors', 'codebook_sizes')
-    check_and_update_group_name(config)
 
     #* Load dataset
     if config['data']['data_path'].split('.')[-1] == 'csv':
