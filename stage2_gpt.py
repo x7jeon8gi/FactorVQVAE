@@ -37,7 +37,7 @@ def train_stage2(config, train_loader, valid_loader, test_loader):
     dec_warmup = config['transformer']['dec_warmup']
 
     if config['train']['run_name'] is not None:
-        run_name = f'NewEta0.75_a{rank_alpha}_VQ{vq_code}_Th{tf_hidden}_h{tf_head}_l{tf_layers}_sd{seed}' # !Auto
+        run_name = f'a{rank_alpha}_VQ{vq_code}_Th{tf_hidden}_h{tf_head}_l{tf_layers}_sd{seed}' # !Auto
     else:
         raise NotImplementedError("run_name should be specified. We recommend to use the same run_name as stage1.")
 
@@ -48,8 +48,8 @@ def train_stage2(config, train_loader, valid_loader, test_loader):
     
     #* init logger
     group_name = config['train']['group_name'] if config['train']['group_name'] is not None else "실험 중"
-    wandb.init(project=project_name, name=run_name, config=config, group= group_name,entity="x7jeon8gi") # todo: group_name
-    wandb_logger = WandbLogger(project=project_name, name=run_name, config=config,entity="x7jeon8gi")
+    wandb.init(project=project_name, name=run_name, config=config, group= group_name) 
+    wandb_logger = WandbLogger(project=project_name, name=run_name, config=config)
     wandb_logger.watch(model, log='all')
 
     chekcpoint_callback = ModelCheckpoint(

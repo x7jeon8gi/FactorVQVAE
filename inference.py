@@ -5,7 +5,7 @@ from utils import load_yaml_param_settings, load_args, run_inference, seed_every
 from trainer.autoregressive import minGPT
 from qlib.data.dataset import TSDatasetH, DataHandlerLP
 from data.dataset import init_data_loader
-import tqdm
+import numpy as np
 
 def main(ckpt, config, test_loader):
 
@@ -17,7 +17,7 @@ def main(ckpt, config, test_loader):
     
     codebook_df, rankic, icir = run_inference(model, test_loader, device=device)
 
-    return codebook_df
+    return codebook_df, rankic
 
 
 if __name__ == "__main__":
@@ -50,7 +50,12 @@ if __name__ == "__main__":
     test_prepare = TsDataset.prepare(segments='test', data_key=DataHandlerLP.DK_L)
     test_loader = init_data_loader(test_prepare, shuffle=False)
 
+    rankic_ls =[]
     for checkpoint in all_checkpoints:
         checkpoint_path = os.path.join(get_root_dir(), 'checkpoints', checkpoint)
-        codebook_df = main(checkpoint_path, config, test_loader)
+        codebook_df, rankic = main(checkpoint_path, config, test_loader)
         #print(codebook_df)
+        rankic_ls.append(rankic)
+
+    # mean
+    print(f"RankIC: {np.mean(np.array(rankic_ls), axis=0)}")
